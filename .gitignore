@@ -1,0 +1,25 @@
+# Build-Ausgaben
+Debug/
+Release/
+*.o
+*.d
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+
+
+.metadata/
+
+tools/Bilder/
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.bmp
+*.raw
+*.cr2
+*.nef
+*.arw
