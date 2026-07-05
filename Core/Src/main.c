@@ -22,6 +22,7 @@
 #include "gpio.h"
 #include <stdint.h>
 
+// Enum für die LED-Kanäle (DIM1–DIM8)
 typedef enum {
     DIM1 = 0,
     DIM2,
@@ -56,25 +57,29 @@ int main(void)
 
   // Duty Cycle pro Kanal (0.0 = 0%, 1.0 = 100%)
   static const float duty_table[8] = {
-      0.3f,  // DIM1 mit 1.5A
-      0.3f,  // DIM2 mit 1.5A
-      0.3f,  // DIM3 mit 1.5A
+      0.33f,  // DIM1 mit 1.5A
+      0.33f,  // DIM2 mit 1.5A
+      0.33f,  // DIM3 mit 1.5A
       0.5f, // DIM4 mit 1A
       0.5f, // DIM5 mit 1A
-      0.3f,  // DIM6 mit 1.5A
-      0.3f,  // DIM7 mit 1.5A
-      0.3f,  // DIM8 mit 1.5A
+      0.33f,  // DIM6 mit 1.5A
+      0.33f,  // DIM7 mit 1.5A
+      0.33f,  // DIM8 mit 1.5A
   };
 
   // Alle Kanäle auf 0 -> LEDs aus bevor Loop startet
   for (DIM_Channel ch = DIM1; ch <= DIM8; ch++)
       LED_SetDutyCycle(ch, 0.0f);
 
-  // Alle Kanäle starten – Duty 0.0 hält Pin auf LOW (LED aus)
-  for (DIM_Channel ch = DIM1; ch <= DIM8; ch++)
-      HAL_TIM_PWM_Start(ch < DIM5 ? &htim8 : &htim4,
-                        (uint32_t[]){TIM_CHANNEL_4, TIM_CHANNEL_3, TIM_CHANNEL_2, TIM_CHANNEL_1,
-                                     TIM_CHANNEL_1, TIM_CHANNEL_2, TIM_CHANNEL_3, TIM_CHANNEL_4}[ch]);
+  // Alle Kanäle starten - Duty 0.0 hält Pin auf LOW (LED aus)
+  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_4);  // DIM1
+  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_3);  // DIM2
+  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_2);  // DIM3
+  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);  // DIM4
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);  // DIM5
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);  // DIM6
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);  // DIM7
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);  // DIM8
 
   static unsigned int last_tick = 8; //Last Tick muss intial unterschiedlich vom System-Tick sein
 
