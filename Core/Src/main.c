@@ -57,14 +57,14 @@ int main(void)
 
   // Duty Cycle pro Kanal (0.0 = 0%, 1.0 = 100%)
   static const float duty_table[8] = {
-      0.33f,  // DIM1 mit 1.5A
-      0.33f,  // DIM2 mit 1.5A
-      0.33f,  // DIM3 mit 1.5A
-      0.5f, // DIM4 mit 1A
-      0.5f, // DIM5 mit 1A
-      0.33f,  // DIM6 mit 1.5A
-      0.33f,  // DIM7 mit 1.5A
-      0.33f,  // DIM8 mit 1.5A
+      0.13f,  	// DIM1 mit 1.5A
+      0.13f,  	// DIM2 mit 1.5A
+      0.13f,  	// DIM3 mit 1.5A
+      0.2f, 	// DIM4 mit 1A
+      0.2f, 	// DIM5 mit 1A
+      0.13f,  	// DIM6 mit 1.5A
+      0.13f,  	// DIM7 mit 1.5A
+      0.13f,  	// DIM8 mit 1.5A
   };
 
   // Alle Kanäle auf 0 -> LEDs aus bevor Loop startet

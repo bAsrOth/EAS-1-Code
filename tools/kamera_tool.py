@@ -35,7 +35,9 @@ nodemap.GetNode("TriggerMode").SetValue("On")
 # Erstellen des Ausgabeverzeichnisses, falls es nicht existiert
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# Wandelt Rohbildaten in Daten um die verarbeitbar sind
 converter = pylon.ImageFormatConverter()
+# Legt 8-bit BGR als Farbformat fest (3 Byte pro Pixel, in der Reihenfolge Blau, Grün, Rot)
 converter.OutputPixelFormat = pylon.PixelType_BGR8packed
 
 # Konfiguration der Kamera: Interner Puffer ist als FIFO konfiguriert
@@ -55,7 +57,7 @@ try:
             # Warten auf ein Bild der Kamera
             result = cam.RetrieveResult(500, pylon.TimeoutHandling_ThrowException)
         except genicam.TimeoutException:
-            print("[Timeout] Kein Trigger empfangen – warte...")
+            print("Kein Trigger empfangen – warte...")
             continue
 
         with result:
@@ -69,7 +71,8 @@ try:
             img_idx += 1
             #Erstellung des Dateinamens für das Bild: IMG_0001_CH1.tiff, IMG_0002_CH2.tiff, ...
             filename = f"IMG_{img_idx:04d}_CH{led_ch}.tiff"
-            # Schreiben des Bildes im Ausgabeverzeichnis als TIFF (Ist schneller als PNG)
+            # Schreiben des Bildes im Ausgabeverzeichnis als TIFF
+            # Mit Komprierungsflag = 1, was für keine Komprimierung steht
             cv2.imwrite(str(OUTPUT_DIR / filename), img, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
 
             # Berechnung der FPS durch die Zeit seit dem letzten Bild
