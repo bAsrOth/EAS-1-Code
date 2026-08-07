@@ -11,6 +11,7 @@ Release/
 
 
 .metadata/
+.claude/
 
 tools/Bilder/
 *.png

@@ -11,7 +11,7 @@ from pathlib import Path
 import cv2
 import time
 
-NUM_CHANNELS = 8                # Anzahl LED-Kanäle
+NUM_CHANNELS = 2                # Anzahl aktiver LED-Kanaele (1–8 einstellbar)
 OUTPUT_DIR   = Path("Bilder")   # Ausgabeverzeichnis für die Bilder
 
 # ─ Kamera öffnen 

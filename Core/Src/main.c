@@ -22,6 +22,8 @@
 #include "gpio.h"
 #include <stdint.h>
 
+#define NUM_CHANNELS 2  // Anzahl aktiver LED-Kanaele (1-8 einstellbar)
+
 // Enum für die LED-Kanäle (DIM1–DIM8)
 typedef enum {
     DIM1 = 0,
@@ -94,7 +96,7 @@ int main(void)
           {
               if (sys_tick == 0)   // Neuer Frame: nächsten Kanal wählen
               {
-                  if (current_ch < DIM8) current_ch++; //Wenn nicht Kanal 8, dann Kanal hochzählen
+                  if (current_ch < (DIM_Channel)(NUM_CHANNELS - 1)) current_ch++;  // Kanal hochzaehlen
                   else current_ch = DIM1;
               }
 
