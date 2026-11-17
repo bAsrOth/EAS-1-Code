@@ -1,8 +1,5 @@
 """
 serial_ctrl.py – Serielle Verbindung zum STM32
-===============================================
-Verwaltet den USB-Serial-Port (CDC Virtual COM Port).
-Sendet zeilenbasierte ASCII-Befehle an den STM32.
 
 Quellen:
   pyserial Dokumentation:  https://pyserial.readthedocs.io/en/latest/
@@ -31,7 +28,7 @@ class SerialController:
     def connect(self, port_name: str) -> bool:
         """
         Oeffnet den angegebenen Port mit 115200 Baud.
-        Bei USB-CDC ist die Baudrate virtual und hat keinen Einfluss auf die Geschwindigkeit.
+        Bei USB-CDC ist die Baudrate eigentlich egal, aber STM32 ist standardmaessig auf 115200 eingestellt.
         Gibt True zurueck wenn erfolgreich.
         """
         try:
@@ -41,12 +38,14 @@ class SerialController:
             self._log(f"# Fehler: {e}")
             return False
 
+
     def disconnect(self):
         """Schliesst den seriellen Port."""
         if self.port and self.port.is_open:
             self.port.close()
         self.port = None
 
+    # Kann ausgelesen werden um zu pruefen ob der Port offen ist
     @property
     def connected(self) -> bool:
         return self.port is not None and self.port.is_open

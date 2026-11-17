@@ -191,9 +191,7 @@ class App:
             self._channel_send(i)
 
 
-    # ══════════════════════════════════════════════════════════════════════════
     # Mittlere Spalte
-    # ══════════════════════════════════════════════════════════════════════════
 
     def _timing_panel(self, parent):
         f = ttk.LabelFrame(parent, text="Timing", padding=6)
@@ -203,9 +201,11 @@ class App:
         row1 = ttk.Frame(f)
         row1.pack(fill="x", pady=2)
         ttk.Label(row1, text="Kanal FPS:", width=14).pack(side="left")
+        # tkinter spezifische variable, eigentlich nur ein Double
         self.channel_fps = tk.DoubleVar(value=30.0)
         ttk.Spinbox(row1, from_=1, to=160, increment=5,
                     textvariable=self.channel_fps, width=6).pack(side="left", padx=4)
+        
         ttk.Label(row1, text="fps / Kanal").pack(side="left")
         self.channel_fps.trace_add("write", self._timing_update)
 
@@ -221,80 +221,83 @@ class App:
 
         ttk.Separator(f, orient="horizontal").pack(fill="x", pady=4)
 
-        # Berechnete Werte (nur Anzeige): links Beschreibung, rechts Wert
+        # Nur Label
         info = ttk.Frame(f)
         info.pack(fill="x")
-        self.timing_vals = {}
-        for row, name in enumerate(["Aktive Kanäle", "Gesamt-FPS", "Frame-Dauer", "LED an", "LED aus"]):
-            ttk.Label(info, text=name + ":").grid(row=row, column=0, sticky="w")
-            self.timing_vals[name] = ttk.Label(info)
-            self.timing_vals[name].grid(row=row, column=1, sticky="w", padx=(8, 0))
+        ttk.Label(info, text="Aktive Kanäle:").grid(row=0, column=0, sticky="w")
+        ttk.Label(info, text="Gesamt-FPS:")   .grid(row=1, column=0, sticky="w")
+        ttk.Label(info, text="Frame-Dauer:")  .grid(row=2, column=0, sticky="w")
+        ttk.Label(info, text="LED an:")       .grid(row=3, column=0, sticky="w")
+        ttk.Label(info, text="LED aus:")      .grid(row=4, column=0, sticky="w")
 
+        # Werte-Labels
+        self.lbl_active      = ttk.Label(info)
+        self.lbl_gesamt_fps  = ttk.Label(info)
+        self.lbl_frame_dauer = ttk.Label(info)
+        self.lbl_led_an      = ttk.Label(info)
+        self.lbl_led_aus     = ttk.Label(info)
+        self.lbl_active     .grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self.lbl_gesamt_fps .grid(row=1, column=1, sticky="w", padx=(8, 0))
+        self.lbl_frame_dauer.grid(row=2, column=1, sticky="w", padx=(8, 0))
+        self.lbl_led_an     .grid(row=3, column=1, sticky="w", padx=(8, 0))
+        self.lbl_led_aus    .grid(row=4, column=1, sticky="w", padx=(8, 0))
+
+        # Sendet Timing Informationen an das STM32 Board
         ttk.Button(f, text="Anwenden", command=self._timing_send).pack(anchor="w", pady=(6, 0))
 
         self._timing_update()
 
+    # Berechnet Tick-Werte aus fps/ms-Eingaben und aktualisiert die Anzeige
     def _timing_update(self, *_):
         """Berechnet Tick-Werte aus fps/ms-Eingaben und aktualisiert die Anzeige."""
         try:
             channel_fps   = self.channel_fps.get()
             on_ms    = self.led_on_ms.get()
-            active   = sum(v.get() for v in self.ch_active)
+            active_channels   = sum(v.get() for v in self.ch_active)
 
             # Ein Frame = ein Kanal. Pro Sekunde laufen gesamt_fps Frames.
             # 1 Tick = 100 µs  →  1 s = 10000 Ticks
-            gesamt_fps   = channel_fps * active
+            gesamt_fps   = channel_fps * active_channels
             frame_ticks  = round(10000.0 / gesamt_fps)
             led_off_tick = min(round(on_ms * 10), frame_ticks - 2)   # LED muss vor Frame-Ende aus sein
 
             self._frame_ticks_val  = frame_ticks
             self._led_off_tick_val = led_off_tick
 
-            v = self.timing_vals
-            v["Aktive Kanäle"].config(text=f"{active} von {NUM_CHANNELS}")
-            v["Gesamt-FPS"]   .config(text=f"{gesamt_fps:.0f} fps  ({active} × {channel_fps:.0f})")
-            v["Frame-Dauer"]  .config(text=f"{frame_ticks * 0.1:.1f} ms  ({frame_ticks} Ticks)")
-            v["LED an"]       .config(text=f"{led_off_tick * 0.1:.1f} ms  (Tick 0 – {led_off_tick})")
-            v["LED aus"]      .config(text=f"{(frame_ticks - led_off_tick) * 0.1:.1f} ms  "
-                                           f"(Tick {led_off_tick} – {frame_ticks})")
+            self.lbl_active     .config(text=f"{active_channels} von {NUM_CHANNELS}")
+            self.lbl_gesamt_fps .config(text=f"{gesamt_fps:.0f} fps  ({active_channels} × {channel_fps:.0f})")
+            self.lbl_frame_dauer.config(text=f"{frame_ticks * 0.1:.1f} ms  ({frame_ticks} Ticks)")
+            self.lbl_led_an     .config(text=f"{led_off_tick * 0.1:.1f} ms  (Tick 0 – {led_off_tick})")
+            self.lbl_led_aus    .config(text=f"{(frame_ticks - led_off_tick) * 0.1:.1f} ms  "
+                                             f"(Tick {led_off_tick} – {frame_ticks})")
+        # Fängt Error ab
         except (tk.TclError, ZeroDivisionError):
             pass
 
+    # Sendet Timing-Daten an das STM32-Board
     def _timing_send(self):
         self.serial.send(f"SET_FRAME_TICKS {self._frame_ticks_val}")
         self.serial.send(f"SET_LED_OFF_TICK {self._led_off_tick_val}")
 
-    # ─────────────────────────────────────────────────────────────────────────
-
+    # Panel für Aufnahme-Einstellungen 
     def _storage_panel(self, parent):
         f = ttk.LabelFrame(parent, text="Aufnahme", padding=6)
         f.pack(fill="x", pady=(0, 6))
 
-        # Pfad
+        # Ordner Pfad
         row1 = ttk.Frame(f)
         row1.pack(fill="x", pady=2)
         ttk.Label(row1, text="Pfad:", width=8).pack(side="left")
         self.path_var = tk.StringVar(value=str(Path.home() / "Bilder"))
         ttk.Entry(row1, textvariable=self.path_var, width=20).pack(side="left", padx=4)
-        ttk.Button(row1, text="…", width=2,
-                   command=lambda: self.path_var.set(
-                       filedialog.askdirectory() or self.path_var.get())
-                   ).pack(side="left")
+        ttk.Button(row1, text="…", width=2, command=self._path_select).pack(side="left")
 
-        # Praefix
+        # Image Praefix
         row2 = ttk.Frame(f)
         row2.pack(fill="x", pady=2)
         ttk.Label(row2, text="Praefix:", width=8).pack(side="left")
         self.prefix_var = tk.StringVar(value="IMG")
         ttk.Entry(row2, textvariable=self.prefix_var, width=10).pack(side="left", padx=4)
-
-        # Format
-        row3 = ttk.Frame(f)
-        row3.pack(fill="x", pady=2)
-        ttk.Label(row3, text="Format:", width=8).pack(side="left")
-        self.fmt_var = tk.StringVar(value="tiff")
-        ttk.Radiobutton(row3, text="TIFF",        variable=self.fmt_var, value="tiff").pack(side="left")
-        ttk.Radiobutton(row3, text="NumPy .npy",  variable=self.fmt_var, value="npy" ).pack(side="left", padx=4)
 
         # Anzahl Bilder pro Run
         row_n = ttk.Frame(f)
@@ -316,40 +319,51 @@ class App:
         self.count_lbl = ttk.Label(f, text="Bereit.")
         self.count_lbl.pack(anchor="w")
 
+    # Ordner-Dialog fuer den Speicherpfad
+    def _path_select(self):
+        ordner = filedialog.askdirectory()
+        # Ordner bleibt beim alten, wenn Benutzt abbricht
+        if ordner:
+            self.path_var.set(ordner)
+
+    # Start der Aufnahme
+    # Startet den Writer in kamera_ctrl.py, der die Bilder speichert.
     def _acq_start(self):
         self._max_images = self.max_images_var.get()
+
+        ######## START DER AUFNAHME ########
         self.kamera.start_acquisition(
             output_dir   = Path(self.path_var.get()),
-            file_format  = self.fmt_var.get(),
             prefix       = self.prefix_var.get(),
             num_channels = NUM_CHANNELS,
             roi          = self.roi,
             max_images   = self._max_images,
         )
-        # Waehrend der Aufnahme keine Vorschau / ROI-Aenderung
-        self.start_btn  .config(state="disabled")
-        self.stop_btn   .config(state="normal")
-        self.preview_btn.config(state="disabled")
-        self.roi_btn    .config(state="disabled")
+        # Alle Buttons deaktiviert, außer Stop
+        self.start_btn   .config(state="disabled")
+        self.stop_btn    .config(state="normal")
+        self.preview_btn .config(state="disabled")
+        self.roi_btn     .config(state="disabled")
+        self.px_fmt_combo.config(state="disabled")
 
+
+    # Stoppt die Aufnahme und macht Buttons wieder aktiv
     def _acq_stop(self):
         self.kamera.stop_acquisition()
-        self.start_btn  .config(state="normal")
-        self.stop_btn   .config(state="disabled")
-        self.preview_btn.config(state="normal")
-        self.roi_btn    .config(state="normal")
+        self.start_btn   .config(state="normal")
+        self.stop_btn    .config(state="disabled")
+        self.preview_btn .config(state="normal")
+        self.roi_btn     .config(state="normal")
+        self.px_fmt_combo.config(state="readonly")
 
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # Rechte Spalte
-    # ══════════════════════════════════════════════════════════════════════════
-
+    # Kamera-Panel
     def _camera_panel(self, parent):
         self._cam_frame = ttk.LabelFrame(parent, text="Kamera", padding=6)
         self._cam_frame.pack(fill="both", expand=True)
         f = self._cam_frame
 
-        # Schaltflaechen
+        # 3 Buttons: Kamera oeffnen, Vorschau, ROI waehlen
         btns = ttk.Frame(f)
         btns.pack(fill="x")
         self.cam_btn     = ttk.Button(btns, text="Kamera oeffnen",  command=self._cam_toggle)
@@ -359,11 +373,13 @@ class App:
         self.preview_btn.pack(side="left", padx=2)
         self.roi_btn    .pack(side="left", padx=2)
 
-        # Kamera-Info (wird nach dem Oeffnen befuellt)
+
+        # Kamera-Info, wird befüllt sobald Kamera erkannt wurde
         self.cam_info_lbl = ttk.Label(f, text="Keine Kamera verbunden.")
         self.cam_info_lbl.pack(anchor="w", pady=(4, 0))
 
-        # Belichtung
+
+        # Einstellung der  Belichtung/Integrationszeit in Mikrosekunden
         exp_row = ttk.Frame(f)
         exp_row.pack(fill="x", pady=4)
         ttk.Label(exp_row, text="Belichtung:").pack(side="left")
@@ -374,21 +390,46 @@ class App:
         ttk.Button(exp_row, text="Setzen",
                    command=self._exposure_set).pack(side="left", padx=6)
 
+        # Bittiefe (die Auswahl kommt beim Oeffnen von der Kamera)
+        fmt_row = ttk.Frame(f)
+        fmt_row.pack(fill="x", pady=(0, 4))
+        ttk.Label(fmt_row, text="Bittiefe:").pack(side="left")
+        self.px_fmt_var   = tk.StringVar()
+        self.px_fmt_combo = ttk.Combobox(fmt_row, textvariable=self.px_fmt_var,
+                                         width=8, state="disabled")
+        self.px_fmt_combo.pack(side="left", padx=4)
+        self.px_fmt_combo.bind("<<ComboboxSelected>>", self._pixel_format_set)
+
         # ROI-Anzeige + erreichbare FPS
         self.roi_lbl = ttk.Label(f, text="ROI: –")
         self.roi_lbl.pack(anchor="w")
         self.max_fps_lbl = ttk.Label(f, text="Max FPS: –")
         self.max_fps_lbl.pack(anchor="w")
 
-        # Vorschau-Canvas (highlightthickness=0: sonst verdeckt ein 2-px-Fokusrand den Bildrand)
+        # Canvas: Quasi Leinwand wo Bilder dargestellt werden können
         self.canvas = tk.Canvas(f, width=PREVIEW_W, height=PREVIEW_H, highlightthickness=0)
         self.canvas.pack(pady=4, expand=True)
 
+    # Setzt Belichtungszeit über Kamera-Controller
     def _exposure_set(self):
         self.kamera.set_exposure(self.exp_var.get())
         if not self.kamera.acquisition_active:   # ROI-Pruefung wuerde die Aufnahme stoeren
             self._roi_show(*self.roi)            # Max FPS haengt von der Belichtung ab
 
+    def _pixel_format_set(self, _event=None):
+        if self.kamera.set_pixel_format(self.px_fmt_var.get()):
+            self._last_img = None       # altes Bild hat die alte Bittiefe, nicht mehr anzeigen
+            self._roi_show(*self.roi)   # Max FPS haengt auch von der Bittiefe ab
+            self._preview_grab()        # gleich ein neues Bild mit der neuen Bittiefe holen
+
+    # Anzeigen von 12-Bit Bildern geht nicht richtig, daher werden sie auf 8 Bit konvertiert
+    def _to_8bit(self, img: np.ndarray) -> np.ndarray:
+        if img.dtype == np.uint8:
+            return img
+        bits = int(self.px_fmt_var.get()[4:])   # "Mono12" → 12
+        return (img >> (bits - 8)).astype(np.uint8)
+
+    # Stellt den ROI der Kamera da und zeigt die erreichbaren FPS an
     def _roi_show(self, x, y, w, h):
         """Prueft den ROI an der Kamera (Rundung + erreichbare FPS) und zeigt ihn an."""
         roi, fps = self.kamera.roi_check(x, y, w, h)
@@ -399,6 +440,7 @@ class App:
         self.max_fps_lbl.config(text=f"Max FPS mit ROI: {fps:.1f}")
         self._canvas_draw()
 
+    # Kamera oeffnen / schliessen
     def _cam_toggle(self):
         if self.kamera.is_open:
             self.kamera.close()
@@ -408,13 +450,14 @@ class App:
             self.start_btn  .config(state="disabled")
             self._cam_frame .config(text="Kamera")
             self.cam_info_lbl.config(text="Keine Kamera verbunden.")
+            self.px_fmt_combo.config(state="disabled")
             self.roi_lbl    .config(text="ROI: –")
             self.max_fps_lbl.config(text="Max FPS: –")
             self._last_img = None
             self.canvas.delete("all")
             return
 
-        info = self.kamera.open()   # liefert Modell, Sensorgroesse, Pixelformat
+        info = self.kamera.open()   # liefert Modell, Sensorgroesse, moegliche Pixelformate
         if not info:
             return
         self.cam_btn    .config(text="Kamera schliessen")
@@ -422,8 +465,14 @@ class App:
         self.roi_btn    .config(state="normal")
         self.start_btn  .config(state="normal")
         self._cam_frame .config(text=f"Kamera  –  {info['model']}")
-        self.cam_info_lbl.config(text=f"Sensor: {info['width']}×{info['height']} px"
-                                      f"  |  Format: {info['px_format']}")
+        self.cam_info_lbl.config(text=f"Sensor: {info['width']}×{info['height']} px")
+
+        # Immer Start auf Mono8, zeigt trotzdem die möglichen FOrmate an
+        self.px_fmt_combo.config(values=info["formats"], state="readonly")
+        self.px_fmt_var.set("Mono8")
+        self.kamera.set_pixel_format("Mono8")
+
+        # Zeigt volles Kamera Bild
         self._roi_show(0, 0, info["width"], info["height"])
 
     # Holt einmalig ein Bild aus der Kamera
@@ -435,19 +484,17 @@ class App:
 
     # Zeigt das letzte Bild was gegrabbed wurde (Beim Start dunkle Fläche)
     def _canvas_draw(self):
-        """
-        Zeichnet das letzte Vollbild (oder eine dunkle Flaeche, solange es keins gibt)
-        und den ROI als gruenen Rahmen darueber.
-        """
         sw, sh     = self.kamera.sensor
         x, y, w, h = self.roi
+        # Skalierung damit Bild in Canvas passt
         s = min(PREVIEW_W / sw, PREVIEW_H / sh)   # Sensor-Pixel → Canvas-Pixel
 
-        self.canvas.delete("all")   # altes Bild entfernen, sonst stapeln sie sich
+        # Löschen vom alten Bild
+        self.canvas.delete("all")
         if self._last_img is None:
-            self.canvas.create_rectangle(0, 0, sw * s, sh * s, fill="#111", outline="")
+            self.canvas.create_rectangle(0, 0, sw * s, sh * s, fill="black", outline="")
         else:
-            img = cv2.resize(self._last_img, (round(sw * s), round(sh * s)))
+            img = cv2.resize(self._to_8bit(self._last_img), (round(sw * s), round(sh * s)))
             # numpy → PIL → tkinter (Pillow wird benoetigt fuer die Konvertierung)
             self._tk_img = ImageTk.PhotoImage(Image.fromarray(img))
             self.canvas.create_image(0, 0, anchor="nw", image=self._tk_img)
@@ -458,7 +505,6 @@ class App:
     def _roi_select(self):
         """
         Einzelbild grabben, cv2-Fenster oeffnen, Benutzer waehlt ROI per Maus.
-        Quelle cv2.selectROI: https://docs.opencv.org/4.x/
         """
         img = self.kamera.grab_single_frame()
         if img is None:
@@ -466,15 +512,20 @@ class App:
             return
         self._last_img = img   # dasselbe Bild danach auch in der Vorschau zeigen
 
+        # 8 Bit Konvertierung
+        img = self._to_8bit(img)
         if img.ndim == 2:
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
+        # Neues Fenster aufmachen mit CV2
         win = "ROI auswaehlen  |  Enter = bestaetigen   C = abbrechen"
         cv2.namedWindow(win, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(win, 960, 600)
+        # ROI auswählen, die dann position, breite und hoehe liefert
         x, y, w, h = cv2.selectROI(win, img, fromCenter=False, showCrosshair=True)
         cv2.destroyAllWindows()
 
+        # Wenn die ROI gültig ist, dann wird sie angezeigt
         if w > 0 and h > 0:
             self._roi_show(x, y, w, h)
         else:
@@ -498,22 +549,20 @@ class App:
         line = f"[{time.strftime('%H:%M:%S')}]  {text}\n"
         self.root.after(0, self._log_write, line)
 
+    # Funktion zum schreiben in das Log-Feld
     def _log_write(self, line: str):
         self.log_text.config(state="normal")
         self.log_text.insert("end", line)
         self.log_text.see("end")
         self.log_text.config(state="disabled")
 
+    # Funktion zum clearne des Log-Felds
     def _log_clear(self):
         self.log_text.config(state="normal")
         self.log_text.delete("1.0", "end")
         self.log_text.config(state="disabled")
 
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # Callbacks von KameraController + Beenden
-    # ══════════════════════════════════════════════════════════════════════════
-
+    
     def _on_count(self, count: int):
         """Wird vom Writer-Thread nach jedem gespeicherten Bild aufgerufen."""
         self.root.after(0, self._count_show, count)

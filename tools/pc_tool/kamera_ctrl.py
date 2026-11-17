@@ -9,8 +9,7 @@ Quellen:
   pypylon GitHub (Basler):       https://github.com/basler/pypylon
   pypylon Beispiele:             https://github.com/basler/pypylon/tree/master/samples
   Basler GenICam-Nodes:          https://docs.baslerweb.com/camera-features
-  OpenCV imwrite:                https://docs.opencv.org/4.x/d4/da8/group__imgcodecs.html
-  NumPy save:                    https://numpy.org/doc/stable/reference/generated/numpy.save.html
+  Pillow TIFF:                   https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html#tiff
 """
 
 import threading
@@ -18,7 +17,7 @@ import queue
 from pathlib import Path
 
 import numpy as np
-import cv2
+from PIL import Image
 from pypylon import pylon, genicam
 
 
@@ -48,32 +47,39 @@ class KameraController:
     def open(self) -> dict | None:
         """
         Oeffnet die erste gefundene Basler-Kamera und setzt den ROI auf den vollen Sensor.
-        Gibt Modell, Sensorgroesse und Pixelformat zurueck (None bei Fehler).
+        Gibt Modell, Sensorgroesse und moegliche Pixelformate zurueck (None bei Fehler).
         """
         try:
+            # Öffnet erste gefundene Kamera
             self.cam = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
             self.cam.Open()
-            self._configure_trigger(hardware=False)
+            # Konfiguriert den Trigger
+            self._configure_trigger()
 
-            # SensorWidth/Height = volle Sensorgroesse, unabhaengig vom zuletzt gesetzten ROI
+            # Node aus GENICAM-Standard: SensorWidth, SensorHeight, PixelFormat, speichert gelesene Daten in Info ab
             n = self.cam.GetNodeMap()
             info = {
                 "model":     self.cam.GetDeviceInfo().GetModelName(),
                 "width":     n.GetNode("SensorWidth").GetValue(),
                 "height":    n.GetNode("SensorHeight").GetValue(),
-                "px_format": n.GetNode("PixelFormat").GetCurrentEntry().GetSymbolic(),
+                # Holt relevanten Monoformate der Kamera
+                "formats":   [f for f in self.cam.PixelFormat.Symbolics
+                              if f in ("Mono8", "Mono10", "Mono12")],
             }
             # Die Kamera behaelt einen alten ROI bis zum Neustart → auf vollen Sensor zuruecksetzen
             self.sensor = (info["width"], info["height"])
+            # ROI auf vollen Sensor setzen
             self.set_roi(0, 0, *self.sensor)
+            # Übergeben von der Info-Dct an GUI
             return info
+        # Kamera Fehler abfnagnen
         except Exception as e:
             self.cam = None
             self._log(f"# Kamera-Fehler: {e}")
             return None
 
+    # Kamera schliessen, Aufnahme Stoppen
     def close(self):
-        """Stoppt eine laufende Aufnahme und schliesst die Kamera."""
         self.stop_acquisition()
         if self.cam:
             try:
@@ -82,26 +88,26 @@ class KameraController:
                 pass
         self.cam = None
 
+    # Funktion die Kamera-Status abfragt
     @property
     def is_open(self) -> bool:
         return self.cam is not None
 
-    # ── Kamera-Konfiguration ──────────────────────────────────────────────────
 
-    def _configure_trigger(self, hardware: bool):
+    # Trigger-Konfiguration
+    def _configure_trigger(self):
         """
-        hardware=False → Freerun: Kamera nimmt selbst Bilder auf (fuer Vorschau)
-        hardware=True  → Hardware-Trigger: wartet auf STM32-Signal an Line1
+        Hardware-Trigger: Jedes Bild startet erst mit der steigenden Flanke
+        des STM32-Signals an Line1. Ausnahme: grab_single_frame() fuer die Vorschau.
         """
         n = self.cam.GetNodeMap()
         n.GetNode("TriggerSelector").SetValue("FrameStart")
-        if hardware:
-            n.GetNode("TriggerSource").SetValue("Line1")
-            n.GetNode("TriggerActivation").SetValue("RisingEdge")
-            n.GetNode("TriggerMode").SetValue("On")
-        else:
-            n.GetNode("TriggerMode").SetValue("Off")
+        n.GetNode("TriggerSource").SetValue("Line1")
+        n.GetNode("TriggerActivation").SetValue("RisingEdge")
+        n.GetNode("TriggerMode").SetValue("On")
 
+    # ROI der Kamera setzen
+    # Bekommt ein Zentrum überreicht und Länge und Breite
     def set_roi(self, x: int, y: int, w: int, h: int) -> tuple | None:
         """
         Setzt den ROI (Region of Interest) auf dem Sensor. Kleinerer ROI = hoehere Framerate.
@@ -111,14 +117,16 @@ class KameraController:
         n = self.cam.GetNodeMap()
 
         def runden(wert, node):
-            # Die Kamera akzeptiert nur Vielfache ihres Inkrements (meist 4 px)
+            # Kamera arbeitet in entweder 2px, 4px Schritten
+            # Daher wird das Inkrment einmal abgefragt, dann der Wert auf das naechste Vielfache gerundet
             inc = n.GetNode(node).GetInc()
+            # / / Ganzzahlig teilen
             return (wert // inc) * inc
 
         x, y = runden(x, "OffsetX"), runden(y, "OffsetY")
         w, h = runden(w, "Width"),   runden(h, "Height")
         try:
-            # Erst Offset auf 0, sonst kann "alter Offset + neue Breite" kurz groesser als der Sensor sein
+            # Erst Offset auf 0, damit kein alter Offset stört
             n.GetNode("OffsetX").SetValue(0)
             n.GetNode("OffsetY").SetValue(0)
             n.GetNode("Width").SetValue(w)
@@ -133,65 +141,88 @@ class KameraController:
     def roi_check(self, x: int, y: int, w: int, h: int) -> tuple:
         """
         Setzt den ROI kurz auf die Kamera, um die gerundeten Werte und die damit
-        erreichbare FPS zu erfahren. Danach wieder Vollbild, damit die Vorschau
-        weiterhin den ganzen Sensor zeigt. Gibt (roi, fps) zurueck, (None, None) bei Fehler.
+        möglichen FPS zu erfahren.
+        Danach wieder Vollbild, damit die Vorschau wieder den ganzen Sensor zeigt.
         """
         roi = self.set_roi(x, y, w, h)
         fps = self.get_resulting_fps() if roi else None
         self.set_roi(0, 0, *self.sensor)
         return roi, fps
 
+    # Abfrage nach den möglichen FPS mit den folgenden Einstellungen
     def get_resulting_fps(self) -> float | None:
-        """
-        Max. erreichbare Framerate. Die Kamera rechnet sie selbst aus ROI + Belichtung + USB.
-        None wenn keine Kamera offen ist.
-        """
         if not self.cam:
             return None
         return self.cam.GetNodeMap().GetNode("ResultingFrameRate").GetValue()
 
+    # Pixelformat setzen
+    def set_pixel_format(self, fmt: str) -> bool:
+        """
+        Setzt die Bittiefe, z.B. 'Mono8' oder 'Mono12'
+        """
+        try:
+            self.cam.GetNodeMap().GetNode("PixelFormat").SetValue(fmt)
+            return True
+        except genicam.GenericException as e:
+            self._log(f"# Pixelformat-Fehler: {e}")
+            return False
+    # Setzt Belichtungszeit in Mikrosekunden
     def set_exposure(self, microseconds: int):
-        """Setzt die Belichtungszeit in Mikrosekunden. Deaktiviert Auto-Belichtung."""
+        """Setzt die Belichtungszeit in Mikrosekunden"""
         if not self.cam:
             return
         try:
             n = self.cam.GetNodeMap()
+            # Schaltet Autoexposure aus
             n.GetNode("ExposureAuto").SetValue("Off")
             n.GetNode("ExposureTime").SetValue(float(microseconds))
         except genicam.GenericException as e:
             self._log(f"# Belichtungsfehler: {e}")
 
+    # Holt einen einzelnen Frame zur Vorschau
     def grab_single_frame(self) -> np.ndarray | None:
-        """Nimmt ein einzelnes Vollbild auf (Freerun). Fuer Vorschau und ROI-Auswahl."""
+        """
+        Nimmt sofort ein einzelnes Vollbild auf, ohne auf den STM32 zu warten.
+        Fuer Vorschau und ROI-Auswahl.
+        """
+        n = self.cam.GetNodeMap()
+        # Kamera löst für ein Bild selbst aus
+        n.GetNode("TriggerMode").SetValue("Off")
         try:
-            result = self.cam.GrabOne(2000)   # 2000 ms Timeout
-        except genicam.GenericException as e:
+            result = self.cam.GrabOne(2000)        
+        except genicam.GenericException as e:   # Falls USB Verbindung versagt
             self._log(f"# Grab-Fehler: {e}")
             return None
+        finally:
+            # danach wieder Hardware-Trigger
+            n.GetNode("TriggerMode").SetValue("On")   
         img = result.GetArray().copy() if result.GrabSucceeded() else None
         result.Release()
         return img
 
     # ── Aufnahme mit Hardware-Trigger ─────────────────────────────────────────
 
-    def start_acquisition(self, output_dir: Path, file_format: str,
-                          prefix: str, num_channels: int, roi: list, max_images: int):
+    def start_acquisition(self, output_folder: Path, prefix: str,
+                          num_channels: int, roi: list, max_images: int):
         """
         Startet die Aufnahme mit Hardware-Trigger.
-          output_dir   : Verzeichnis fuer die gespeicherten Bilder
-          file_format  : 'tiff' oder 'npy'
-          prefix       : Dateiname-Praefix, z.B. 'IMG'
-          num_channels : Anzahl LED-Kanaele (fuer den Kanal-Zaehler)
-          roi          : [x, y, w, h] – erst hier wird der ROI wirklich auf die Kamera gesetzt
-          max_images   : nach so vielen Bildern hoert der Grab-Thread auf (0 = unbegrenzt)
+            output_folder: Ordner fuer die gespeicherten Bilder (.tiff)
+            prefix       : Dateiname-Praefix, z.B. 'IMG'
+            num_channels : Anzahl der aktiven LED-Kanaele
+            roi          : [x, y, w, h] – ROI der Aufnahme
+            max_images   : nach so vielen Bildern Stoppt die Aufnahme (0 = unbegrenzt)
         """
+        # Sollte die Kamera nicht offen sein oder bereits eine Aufnahme laufen stoppt die Funktion
         if not self.cam or self.acquisition_active:
             return
 
+        # ROI wird gesetzt und wenn nichts zurück kommt, dann stoppt Funktion
         if not self.set_roi(*roi):
             return
-        output_dir.mkdir(parents=True, exist_ok=True)
+        #Setzt den Ordner
+        output_folder.mkdir(parents=True, exist_ok=True)
 
+        # Setzt Variablen intial zum Starten
         self._image_index     = 0
         self._led_ch          = 1
         self._num_ch          = num_channels
@@ -202,36 +233,41 @@ class KameraController:
         while not self._img_queue.empty():
             self._img_queue.get_nowait()
 
+        # Grobe Struktur:
+        # 2 Threads die parallel laufen
+        # writer Thread wartet auf Bilder aus dem Grab-Thread und schreibt sie auf als .tiff weg.
+        # Grad Thread wartet auf Bild aus der Kamera, welches nach dem Hardware Trigger kommt und legt es in die Queue
+
         # Writer-Thread starten
         threading.Thread(target=self._writer_loop,
-                         args=(output_dir, file_format, prefix), daemon=True).start()
+                         args=(output_folder, prefix), daemon=True).start()
 
-        # Kamera auf Hardware-Trigger umschalten
-        self._configure_trigger(hardware=True)
+        # Kamera ist seit open() auf Hardware-Trigger → Grabben starten, Bilder kommen mit jedem Trigger
         self.cam.StartGrabbing(pylon.GrabStrategy_OneByOne)
 
         # Grab-Thread starten
         threading.Thread(target=self._grab_loop, daemon=True).start()
 
+    
     def stop_acquisition(self):
-        """Stoppt die Aufnahme. Writer-Thread laeuft noch bis Queue leer ist."""
+        """Stoppt die Aufnahme, Kamera-Grabben und Threads."""
         if not self.acquisition_active:
             return
         self.acquisition_active = False
         if self.cam and self.cam.IsGrabbing():
             self.cam.StopGrabbing()
-        self.set_roi(0, 0, *self.sensor)          # zurueck auf Vollbild fuer die Vorschau
-        self._configure_trigger(hardware=False)   # Vorschau braucht Freerun, nicht Line1
+
+        # Setzt ROI wieder auf Vollbild
+        self.set_roi(0, 0, *self.sensor)   
 
     def _grab_loop(self):
         """
         Hintergrund-Thread: wartet auf Hardware-Trigger, holt Bild,
         legt es mit dem aktuellen Kanal in die Queue.
         """
-        converter = pylon.ImageFormatConverter()
-        converter.OutputPixelFormat = pylon.PixelType_Mono8   # 1 Byte pro Pixel (Graubild)
         grabbed = 0   # Anzahl Bilder, die in die Queue gelegt wurden
 
+        # Wenn Aufnahme läuft und Kamera bereits am arbeiten ist, dann Bilder holen
         while self.acquisition_active and self.cam.IsGrabbing():
             try:
                 result = self.cam.RetrieveResult(100, pylon.TimeoutHandling_ThrowException)
@@ -243,10 +279,12 @@ class KameraController:
                     self._log(f"# Grab-Fehler: {result.ErrorDescription}")
                     continue
 
-                img = converter.Convert(result).GetArray().copy()
+                # Rohdaten ohne Umwandlung: Mono8 → uint8, Mono10/12 → uint16
+                img = result.GetArray().copy()
                 ch  = self._led_ch
 
-                # Kanal weiterschalten (synchron mit STM32)
+                # Kanal weiterschalten 
+                # Wenn die maximale Kanalzahl erreicht ist, wird wieder bei 1 begonnen
                 self._led_ch += 1
                 if self._led_ch > self._num_ch:
                     self._led_ch = 1
@@ -257,15 +295,15 @@ class KameraController:
                 except queue.Full:
                     self._log("# Warnung: Queue voll – Bild uebersprungen!")
 
-            # Gewuenschte Anzahl erreicht → keine weiteren Bilder holen
-            # (Writer speichert die Queue noch fertig, das GUI stoppt danach die Aufnahme)
+            # Stoppt wenn maximale Anzahl der Bilder erreiuht ist und Anzahl der Bilder != 0 ist (Dann unbegrenzt)
             if self._max_images and grabbed >= self._max_images:
                 break
 
-    def _writer_loop(self, output_dir: Path, file_format: str, prefix: str):
+    def _writer_loop(self, output_folder: Path, prefix: str):
         """
-        Hintergrund-Thread: nimmt Bilder aus Queue und schreibt sie auf Disk.
-        TIFF ohne Komprimierung oder NumPy .npy fuer maximale Schreibgeschwindigkeit.
+        Hintergrund-Thread: nimmt Bilder aus Queue und schreibt sie als .tiff weg.
+        Unkomprimiert, ansonsten zu langsam
+        Mono8 → 8-bit-TIFF, Mono10/12 → 16-bit-TIFF
         """
         while self.acquisition_active or not self._img_queue.empty():
             try:
@@ -276,13 +314,9 @@ class KameraController:
             self._image_index += 1
             name = f"{prefix}_{self._image_index:04d}_CH{ch}"
 
-            if file_format == "npy":
-                # NumPy raw: kein Overhead, schnellstes Format
-                np.save(str(output_dir / (name + ".npy")), img)
-            else:
-                # TIFF, Compression=1 = keine Komprimierung (LZW waere 5, JPEG 6)
-                # Quelle: https://docs.opencv.org/4.x/d4/da8/group__imgcodecs.html
-                cv2.imwrite(str(output_dir / (name + ".tiff")), img,
-                            [cv2.IMWRITE_TIFF_COMPRESSION, 1])
+            # Alternative: rohes NumPy-Array (.npy), minimal schneller, aber kein Bildformat
+            # np.save(output_folder / (name + ".npy"), img)
+
+            Image.fromarray(img).save(output_folder / (name + ".tiff"))
 
             self._on_count(self._image_index)
