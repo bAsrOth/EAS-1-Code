@@ -235,7 +235,7 @@ class KameraController:
 
         # Grobe Struktur:
         # 2 Threads die parallel laufen
-        # writer Thread wartet auf Bilder aus dem Grab-Thread und schreibt sie auf als .tiff weg.
+        # writer Thread wartet auf Bilder in der Queue und schreibt sie auf als .tiff weg.
         # Grad Thread wartet auf Bild aus der Kamera, welches nach dem Hardware Trigger kommt und legt es in die Queue
 
         # Writer-Thread starten

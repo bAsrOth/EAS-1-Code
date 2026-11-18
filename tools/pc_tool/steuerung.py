@@ -333,7 +333,7 @@ class App:
 
         ######## START DER AUFNAHME ########
         self.kamera.start_acquisition(
-            output_dir   = Path(self.path_var.get()),
+            output_folder   = Path(self.path_var.get()),
             prefix       = self.prefix_var.get(),
             num_channels = NUM_CHANNELS,
             roi          = self.roi,
