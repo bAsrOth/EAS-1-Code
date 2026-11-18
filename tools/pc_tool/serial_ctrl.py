@@ -61,6 +61,8 @@ class SerialController:
           SET_DUTY 1 0.200     Duty Cycle Kanal 1 = 20%
           SET_FRAME_TICKS 42   Frame-Laenge = 42 Ticks
           SET_LED_OFF_TICK 20  LED aus ab Tick 20
+          START                Sequencer ab Tick 0 / CH1 starten (bei Aufnahmestart)
+          STOP                 Sequencer anhalten, keine Trigger mehr (bei Aufnahmestopp)
         """
         if not self.connected:
             return False

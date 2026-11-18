@@ -203,9 +203,9 @@ class KameraController:
     # ── Aufnahme mit Hardware-Trigger ─────────────────────────────────────────
 
     def start_acquisition(self, output_folder: Path, prefix: str,
-                          num_channels: int, roi: list, max_images: int):
+                          num_channels: int, roi: list, max_images: int) -> bool:
         """
-        Startet die Aufnahme mit Hardware-Trigger.
+        Startet die Aufnahme mit Hardware-Trigger. Gibt True zurueck, wenn sie laeuft.
             output_folder: Ordner fuer die gespeicherten Bilder (.tiff)
             prefix       : Dateiname-Praefix, z.B. 'IMG'
             num_channels : Anzahl der aktiven LED-Kanaele
@@ -214,11 +214,11 @@ class KameraController:
         """
         # Sollte die Kamera nicht offen sein oder bereits eine Aufnahme laufen stoppt die Funktion
         if not self.cam or self.acquisition_active:
-            return
+            return False
 
         # ROI wird gesetzt und wenn nichts zurück kommt, dann stoppt Funktion
         if not self.set_roi(*roi):
-            return
+            return False
         #Setzt den Ordner
         output_folder.mkdir(parents=True, exist_ok=True)
 
@@ -247,6 +247,7 @@ class KameraController:
 
         # Grab-Thread starten
         threading.Thread(target=self._grab_loop, daemon=True).start()
+        return True
 
     
     def stop_acquisition(self):

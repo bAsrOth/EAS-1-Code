@@ -1,18 +1,3 @@
-"""
-tiff_komprimieren.py – komprimiert alle TIFFs eines Ordners verlustfrei
-========================================================================
-Aufruf:
-  python tiff_komprimieren.py              → Ordner per Dialog auswaehlen
-  python tiff_komprimieren.py <Ordner>     → Ordner direkt angeben
-
-Die komprimierten TIFFs landen im Unterordner "komprimiert" mit gleichem
-Dateinamen, die Originale bleiben unveraendert.
-Deflate (zlib) ist verlustfrei: Bittiefe und alle Pixelwerte bleiben exakt erhalten.
-
-Quellen:
-  Pillow TIFF:    https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html#tiff
-"""
-
 import sys
 import tkinter as tk
 from tkinter import filedialog

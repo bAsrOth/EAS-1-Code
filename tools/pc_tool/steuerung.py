@@ -332,13 +332,19 @@ class App:
         self._max_images = self.max_images_var.get()
 
         ######## START DER AUFNAHME ########
-        self.kamera.start_acquisition(
+        started = self.kamera.start_acquisition(
             output_folder   = Path(self.path_var.get()),
             prefix       = self.prefix_var.get(),
             num_channels = NUM_CHANNELS,
             roi          = self.roi,
             max_images   = self._max_images,
         )
+        if not started:   # Grund steht schon im Log; STM32 bleibt aus, Knoepfe bleiben wie sie sind
+            return
+
+        # Erst jetzt, wo die Kamera auf Trigger wartet: STM32 startet bei CH1
+        self.serial.send("START")
+
         # Alle Buttons deaktiviert, außer Stop
         self.start_btn   .config(state="disabled")
         self.stop_btn    .config(state="normal")
@@ -349,6 +355,7 @@ class App:
 
     # Stoppt die Aufnahme und macht Buttons wieder aktiv
     def _acq_stop(self):
+        self.serial.send("STOP")   # zuerst die Trigger stoppen, dann die Kamera
         self.kamera.stop_acquisition()
         self.start_btn   .config(state="normal")
         self.stop_btn    .config(state="disabled")
